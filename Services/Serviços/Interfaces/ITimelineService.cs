@@ -42,7 +42,7 @@ namespace Business_Logic.Serviços.Interfaces
         /// <summary>
         /// Valida se a timeline possui 100% de cobertura (1440 minutos)
         /// </summary>
-        ResultadoValidacao ValidarCobertura(List<BlocoTimeline> blocos, DateTime data);
+        
 
         // ========================================
         // MÉTODOS DE ANÁLISE EM CAMADAS

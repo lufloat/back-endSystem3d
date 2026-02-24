@@ -28,6 +28,8 @@ namespace SistemaProducao3D.Modelos.Timeline
         AjusteImpressao = 12,
         LimpezaMesa = 13,
         FalhaTemporaria = 14,
+        JobAbortado = 15,        // ⭐ ADICIONADO
+        JobFalhado = 16,         // ⭐ ADICIONADO
 
         // OCIOSIDADE
         FaltaJob = 20,
@@ -317,6 +319,8 @@ namespace SistemaProducao3D.Modelos.Timeline
                 MotivoStatus.AjusteImpressao => "Ajustes durante impressão",
                 MotivoStatus.LimpezaMesa => "Limpeza da mesa",
                 MotivoStatus.FalhaTemporaria => "Falha temporária",
+                MotivoStatus.JobAbortado => "Job abortado/cancelado",      // ⭐ ADICIONADO
+                MotivoStatus.JobFalhado => "Job falhou ao iniciar",        // ⭐ ADICIONADO
                 MotivoStatus.FaltaJob => "Aguardando novo job",
                 MotivoStatus.AguardandoAprovacao => "Aguardando aprovação",
                 MotivoStatus.FimExpediente => "Fim do expediente",
