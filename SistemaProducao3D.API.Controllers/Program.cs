@@ -18,7 +18,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowReact", policy =>
     {
         policy.WithOrigins("http://localhost:5173",
-            "http://localhost:3000", "http://127.0.0.1:3000", "http://127.0.0.5173")
+            "http://localhost:3000", "http://127.0.0.1:3000", "http://127.0.0.5173", "https://front-end-system3-d.vercel.app/")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -87,7 +87,7 @@ app.UseCors("AllowReact");
 app.UseSwagger();
 app.UseSwaggerUI();
 
-app.UseHttpsRedirection();
+
 app.UseAuthorization();
 app.MapControllers();
 
