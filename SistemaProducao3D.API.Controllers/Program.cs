@@ -17,11 +17,36 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReact", policy =>
     {
-        policy.WithOrigins("http://localhost:5173",
-            "http://localhost:3000", "http://127.0.0.1:3000", "http://127.0.0.5173", "https://front-end-system3-d.vercel.app")
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials();
+        policy
+            // ✅ Mantém os origins explícitos que você já tinha (corrigindo o que estava errado)
+            .WithOrigins(
+                "http://localhost:5173",
+                "http://localhost:3000",
+                "http://127.0.0.1:3000",
+                "http://127.0.0.1:5173", // ✅ corrigido (antes estava 127.0.0.5173)
+                "https://front-end-system3-d.vercel.app"
+            )
+            // ✅ Adiciona suporte para qualquer deploy/preview da Vercel
+            // (e mantém AllowCredentials funcionando)
+            .SetIsOriginAllowed(origin =>
+            {
+                if (string.IsNullOrWhiteSpace(origin)) return false;
+
+                // mantém os que já estão no WithOrigins
+                if (origin == "http://localhost:5173") return true;
+                if (origin == "http://localhost:3000") return true;
+                if (origin == "http://127.0.0.1:3000") return true;
+                if (origin == "http://127.0.0.1:5173") return true;
+                if (origin == "https://front-end-system3-d.vercel.app") return true;
+
+                // libera previews do Vercel: https://qualquer-coisa.vercel.app
+                if (origin.StartsWith("https://") && origin.EndsWith(".vercel.app")) return true;
+
+                return false;
+            })
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 
@@ -82,18 +107,21 @@ var app = builder.Build();
 // ========================================
 // PIPELINE
 // ========================================
+app.UseRouting();
+
 app.UseCors("AllowReact");
 
 app.UseSwagger();
 app.UseSwaggerUI();
 
+app.UseHttpsRedirection();
 
 app.UseAuthorization();
 app.MapControllers();
 
 Console.WriteLine("========================================");
 Console.WriteLine("API iniciada com sucesso!");
-Console.WriteLine("CORS habilitado para: http://localhost:5173");
+Console.WriteLine("CORS habilitado para: http://localhost:5173, http://localhost:3000, http://127.0.0.1:5173, http://127.0.0.1:3000 e *.vercel.app");
 Console.WriteLine("Densidade sera buscada nas 6 impressoras Ultimaker");
 Console.WriteLine("========================================");
 
