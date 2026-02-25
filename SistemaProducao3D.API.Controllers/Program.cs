@@ -114,7 +114,13 @@ app.UseCors("AllowReact");
 app.UseSwagger();
 app.UseSwaggerUI();
 
-app.UseHttpsRedirection();
+var httpsPort = builder.Configuration["ASPNETCORE_HTTPS_PORT"]
+    ?? builder.Configuration["HTTPS_PORT"];
+
+if (!string.IsNullOrWhiteSpace(httpsPort))
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseAuthorization();
 app.MapControllers();
