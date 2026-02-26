@@ -20,7 +20,7 @@ builder.Services.AddCors(options =>
         policy.WithOrigins("http://localhost:5173",
             "http://localhost:3000", "http://127.0.0.1:3000", "http://127.0.0.5173", 
              "https://front-end-system3-d.vercel.app",
-            "http://system3dback-frontend-7u5oui-147cb7-189-112-233-141.traefik.me")
+            "http://system3dback-frontend-7u5oui-5bc0d1-189-112-233-141.traefik.me")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
