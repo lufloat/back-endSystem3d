@@ -23,7 +23,7 @@ builder.Services.AddCors(options =>
             "http://127.0.0.1:3000",
             "https://front-end-system3-d.vercel.app",
             "http://system3dback-frontend-7u5oui-5bc0d1-189-112-233-141.traefik.me",
-            "https://system3dback-frontend-7u5oui-5bc0d1-189-112-233-141.traefik.me",
+            "https://front-end-system3-d-git-main-lufloats-projects.vercel.app",
             "http://192.168.148.19:8089"
         )
         .AllowAnyHeader()

@@ -1,3 +1,2 @@
-{
-
-}
+appsettings.Production.json
+appsettings.*.local.json
