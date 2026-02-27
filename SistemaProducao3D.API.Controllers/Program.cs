@@ -85,6 +85,7 @@ var app = builder.Build();
 // ========================================
 // PIPELINE
 // ========================================
+app.UseRouting();
 app.UseCors("AllowReact");   // ← deve vir ANTES do UseAuthorization
 app.UseSwagger();
 app.UseSwaggerUI();
