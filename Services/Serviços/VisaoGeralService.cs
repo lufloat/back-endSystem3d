@@ -28,7 +28,7 @@ namespace Business_Logic.Serviços
             );
 
             return jobs
-                .Where(j => j.Status == "finished")
+                .Where(j => j.Status == "finished" && j.JobType != "Prototipo")
                 .GroupBy(j => new { j.DatetimeStarted.Year, j.DatetimeStarted.Month })
                 .OrderBy(g => g.Key.Year).ThenBy(g => g.Key.Month)
                 .Select(g => new
@@ -46,8 +46,11 @@ namespace Business_Logic.Serviços
                 new DateTime(ano, mesFim, DateTime.DaysInMonth(ano, mesFim))
             );
 
+            // ✅ CORREÇÃO: usar JobType em vez de IsPrototype
+            // IsPrototype é [NotMapped] e pode não estar setado corretamente em todos os registros.
+            // JobType == "Prototipo" é o campo persistido no banco de dados.
             return jobs
-                .Where(j => j.Status == "finished" && j.IsPrototype)
+                .Where(j => j.Status == "finished" && j.JobType == "Prototipo")
                 .GroupBy(j => new { j.DatetimeStarted.Year, j.DatetimeStarted.Month })
                 .OrderBy(g => g.Key.Year).ThenBy(g => g.Key.Month)
                 .Select(g => new
@@ -58,7 +61,6 @@ namespace Business_Logic.Serviços
                 .ToList<object>();
         }
 
-        // ✅ CORRIGIDO: Agora retorna apenas FAILED (não soma aborted)
         public async Task<List<object>> ObterErrosMensais(int ano, int mesInicio, int mesFim)
         {
             var jobs = await _producaoRepository.ObterPorIntervalo(
@@ -67,7 +69,7 @@ namespace Business_Logic.Serviços
             );
 
             return jobs
-                .Where(j => j.Status == "failed") // ✅ APENAS FAILED
+                .Where(j => j.Status == "failed")
                 .GroupBy(j => new { j.DatetimeStarted.Year, j.DatetimeStarted.Month })
                 .OrderBy(g => g.Key.Year).ThenBy(g => g.Key.Month)
                 .Select(g => new
@@ -78,7 +80,6 @@ namespace Business_Logic.Serviços
                 .ToList<object>();
         }
 
-        // ✅ NOVO: Retorna apenas FAILED separado
         public async Task<List<object>> ObterFailedMensais(int ano, int mesInicio, int mesFim)
         {
             var jobs = await _producaoRepository.ObterPorIntervalo(
@@ -98,7 +99,6 @@ namespace Business_Logic.Serviços
                 .ToList<object>();
         }
 
-        // ✅ NOVO: Retorna apenas ABORTED separado
         public async Task<List<object>> ObterAbortedMensais(int ano, int mesInicio, int mesFim)
         {
             var jobs = await _producaoRepository.ObterPorIntervalo(
@@ -149,7 +149,7 @@ namespace Business_Logic.Serviços
             );
 
             return jobs
-                .Where(j => j.Status == "finished" && j.MachineId > 0)
+                .Where(j => j.Status == "finished" && j.JobType != "Prototipo" && j.MachineId > 0)
                 .GroupBy(j => new
                 {
                     Periodo = $"{j.DatetimeStarted.Month:D2}/{j.DatetimeStarted.Year}",
@@ -174,8 +174,9 @@ namespace Business_Logic.Serviços
                 new DateTime(ano, mesFim, DateTime.DaysInMonth(ano, mesFim))
             );
 
+            // ✅ CORREÇÃO: usar JobType em vez de IsPrototype
             return jobs
-                .Where(j => j.Status == "finished" && j.IsPrototype && j.MachineId > 0)
+                .Where(j => j.Status == "finished" && j.JobType == "Prototipo" && j.MachineId > 0)
                 .GroupBy(j => new
                 {
                     Periodo = $"{j.DatetimeStarted.Month:D2}/{j.DatetimeStarted.Year}",
@@ -193,7 +194,6 @@ namespace Business_Logic.Serviços
                 .ToList<object>();
         }
 
-        // ✅ CORRIGIDO: Apenas FAILED (não soma aborted)
         public async Task<List<object>> ObterErrosPorImpressoraAnual(int ano, int mesInicio, int mesFim)
         {
             var jobs = await _producaoRepository.ObterPorIntervalo(
@@ -202,7 +202,7 @@ namespace Business_Logic.Serviços
             );
 
             return jobs
-                .Where(j => j.Status == "failed" && j.MachineId > 0) // ✅ APENAS FAILED
+                .Where(j => j.Status == "failed" && j.MachineId > 0)
                 .GroupBy(j => new
                 {
                     Periodo = $"{j.DatetimeStarted.Month:D2}/{j.DatetimeStarted.Year}",
@@ -220,7 +220,6 @@ namespace Business_Logic.Serviços
                 .ToList<object>();
         }
 
-        // ✅ NOVO: FAILED por impressora
         public async Task<List<object>> ObterFailedPorImpressoraAnual(int ano, int mesInicio, int mesFim)
         {
             var jobs = await _producaoRepository.ObterPorIntervalo(
@@ -247,7 +246,6 @@ namespace Business_Logic.Serviços
                 .ToList<object>();
         }
 
-        // ✅ NOVO: ABORTED por impressora
         public async Task<List<object>> ObterAbortedPorImpressoraAnual(int ano, int mesInicio, int mesFim)
         {
             var jobs = await _producaoRepository.ObterPorIntervalo(
@@ -276,7 +274,7 @@ namespace Business_Logic.Serviços
 
         public async Task<List<object>> ObterPesoPorImpressoraAnual(int ano, int mesInicio, int mesFim)
         {
-            var jobs = await _producaoRepository.ObterPorIntervalo(                     
+            var jobs = await _producaoRepository.ObterPorIntervalo(
                 new DateTime(ano, mesInicio, 1),
                 new DateTime(ano, mesFim, DateTime.DaysInMonth(ano, mesFim))
             );

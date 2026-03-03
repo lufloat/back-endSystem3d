@@ -5,6 +5,7 @@
 // ✅ CORREÇÃO 1: filtro cross-day (InicioPausa.Date OU FimPausa.Date)
 // ✅ CORREÇÃO 2: janela expandida +1 dia para jobs cross-midnight
 // ✅ CORREÇÃO 3: taxas calculadas como média das impressoras (não pool total)
+// ✅ CORREÇÃO 4: TaxaSucesso descomentada e corrigida
 // ========================================
 
 using Business_Logic.Repositories.Interfaces;
@@ -164,8 +165,6 @@ namespace Business_Logic.Serviços
             resumo.TempoManutencaoTotal = tempoTotalManutencao;
 
             // ── ✅ CORREÇÃO 3: taxas como MÉDIA das impressoras individuais ──
-            // Calcular sobre pool total faz pausas ficarem 0.0% porque
-            // 0.3h / 4464h_total = 0.007% → arredonda para 0.0%
             var impressorasComDados = resumo.Impressoras.Where(i => i.TempoTotal > 0).ToList();
             var n = impressorasComDados.Count > 0 ? (decimal)impressorasComDados.Count : 1;
 
@@ -190,9 +189,11 @@ namespace Business_Logic.Serviços
             int totalJobsFinalizados = resumo.Impressoras.Sum(i => i.JobsFinalizados);
             int totalJobsAbortados = resumo.Impressoras.Sum(i => i.JobsAbortados);
 
-            // resumo.TaxaSucesso = totalJobs > 0
-            //     ? Math.Round((decimal)totalJobsFinalizados / totalJobs * 100, 1)
-            //     : 0;
+            // ✅ CORREÇÃO 4: TaxaSucesso calculada corretamente
+            int totalJobs = totalJobsFinalizados + totalJobsAbortados;
+            resumo.TaxaSucesso = totalJobs > 0
+                ? Math.Round((decimal)totalJobsFinalizados / totalJobs * 100, 1)
+                : 0;
 
             var todosMotivosLista = todosMotivos.ToList();
 
@@ -255,11 +256,8 @@ namespace Business_Logic.Serviços
 
                         var duracao = Math.Round((decimal)(eventoFim.Time - evento.Time).TotalMinutes, 2);
 
-                        // Pausas reais raramente excedem 8h
-                        if (duracao <= 0 || duracao > 2400) continue;  // duracao is decimal, 12s = 0.2 → passes through, ceiling to 1min
+                        if (duracao <= 0 || duracao > 2400) continue;
 
-                        // A janela expandida é só para busca;
-                        // só inclui pausas que pertencem ao período do mês alvo
                         if (eventoFim.Time < inicioMes || evento.Time > fimMes) continue;
 
                         todosEventos.Add(new EventoPausa
@@ -328,8 +326,6 @@ namespace Business_Logic.Serviços
                     .ToList();
 
                 // ✅ CORREÇÃO 1: inclui pausa se INÍCIO ou FIM cai no dia
-                // Antes: e.InicioPausa.Date == data.Date
-                // Perdia pausas de jobs que cruzam a meia-noite
                 var eventosPausaDia = eventosPausaMes
                     .Where(e => e.InicioPausa.Date == data.Date || e.FimPausa.Date == data.Date)
                     .ToList();
@@ -413,10 +409,7 @@ namespace Business_Logic.Serviços
             resumo.Motivos = todosMotivos.Values.OrderByDescending(m => m.TempoTotal).ToList();
             resumo.JobsFinalizados = todosJobsMes.Count(j => j.IsSucess);
             resumo.JobsAbortados = todosJobsMes.Count(j => !j.IsSucess);
-
-            // resumo.TaxaSucesso = totalJobs > 0
-            //     ? Math.Round((decimal)resumo.JobsFinalizados / totalJobs * 100, 1)
-            //     : 0;
+            // TaxaSucesso é calculada automaticamente pelo modelo ResumoMensal
 
             return resumo;
         }

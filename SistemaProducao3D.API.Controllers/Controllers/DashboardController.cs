@@ -1,31 +1,21 @@
 ﻿// ============================================================
-// DashboardController.cs — VERSÃO FINAL
-// CORREÇÃO DEFINITIVA DAS PAUSAS:
-//
-// PROBLEMA RAIZ (matemático):
-//   M04 JAN/2026: 0.2h pausa / 744h total × 100 = 0.027%
-//   Math.Round(0.027, 1) = 0.0  ← SEMPRE ZERO com 1 casa decimal
-//
-// SOLUÇÃO: usar 2 casas decimais (round=2) em TODOS os campos taxaPausas
-//   Math.Round(0.027, 2) = 0.03  ← VISÍVEL
-//
-// Os outros campos (produção, ociosidade) ficam com 1 casa pois
-// seus valores são grandes o suficiente (30%, 68%) para não desaparecer.
+// DashboardController.cs — VERSÃO CORRIGIDA
 // ============================================================
 
-using Business_Logic.Serviços.Interfaces;
+using Business_Logic.Repositories;
 using Business_Logic.Repositories.Interfaces;
+using Business_Logic.Serviços;
+using Business_Logic.Serviços.Interfaces;
 using Business_Logic.Serviços.Sync;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
-using System;
-using System.Linq;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using Business_Logic.Repositories;
 using SistemaProducao3D.Integration.Ultimaker;
 using SistemaProducao3D.Modelos.Timeline;
-using Business_Logic.Serviços;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace SistemaProducao3D.API.Controllers
 {
@@ -107,46 +97,64 @@ namespace SistemaProducao3D.API.Controllers
         }
 
         // ============================================================
-        // VISAO GERAL
+        // VISAO GERAL — parâmetros sem default fixo (obrigatórios via query)
         // ============================================================
 
         [HttpGet("visao-geral/producao")]
-        public async Task<IActionResult> ObterProducaoMensal([FromQuery] int ano = 2025, [FromQuery] int mesInicio = 1, [FromQuery] int mesFim = 12)
+        public async Task<IActionResult> ObterProducaoMensal(
+            [FromQuery] int ano,
+            [FromQuery] int mesInicio = 1,
+            [FromQuery] int mesFim = 12)
         {
             try { return Ok(await _visaoGeralService.ObterProducaoMensal(ano, mesInicio, mesFim)); }
             catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
         }
 
         [HttpGet("visao-geral/prototipos")]
-        public async Task<IActionResult> ObterPrototiposMensal([FromQuery] int ano = 2025, [FromQuery] int mesInicio = 1, [FromQuery] int mesFim = 12)
+        public async Task<IActionResult> ObterPrototiposMensal(
+            [FromQuery] int ano,
+            [FromQuery] int mesInicio = 1,
+            [FromQuery] int mesFim = 12)
         {
             try { return Ok(await _visaoGeralService.ObterPrototipoMensal(ano, mesInicio, mesFim)); }
             catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
         }
 
         [HttpGet("visao-geral/erros")]
-        public async Task<IActionResult> ObterErrosMensal([FromQuery] int ano = 2025, [FromQuery] int mesInicio = 1, [FromQuery] int mesFim = 12)
+        public async Task<IActionResult> ObterErrosMensal(
+            [FromQuery] int ano,
+            [FromQuery] int mesInicio = 1,
+            [FromQuery] int mesFim = 12)
         {
             try { return Ok(await _visaoGeralService.ObterErrosMensais(ano, mesInicio, mesFim)); }
             catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
         }
 
         [HttpGet("visao-geral/peso")]
-        public async Task<IActionResult> ObterPesoMensal([FromQuery] int ano = 2025, [FromQuery] int mesInicio = 1, [FromQuery] int mesFim = 12)
+        public async Task<IActionResult> ObterPesoMensal(
+            [FromQuery] int ano,
+            [FromQuery] int mesInicio = 1,
+            [FromQuery] int mesFim = 12)
         {
             try { return Ok(await _visaoGeralService.ObterPesoMensal(ano, mesInicio, mesFim)); }
             catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
         }
 
         [HttpGet("visao-geral/failed")]
-        public async Task<IActionResult> ObterFailedMensal([FromQuery] int ano = 2025, [FromQuery] int mesInicio = 1, [FromQuery] int mesFim = 12)
+        public async Task<IActionResult> ObterFailedMensal(
+            [FromQuery] int ano,
+            [FromQuery] int mesInicio = 1,
+            [FromQuery] int mesFim = 12)
         {
             try { return Ok(await _visaoGeralService.ObterFailedMensais(ano, mesInicio, mesFim)); }
             catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
         }
 
         [HttpGet("visao-geral/aborted")]
-        public async Task<IActionResult> ObterAbortedMensal([FromQuery] int ano = 2025, [FromQuery] int mesInicio = 1, [FromQuery] int mesFim = 12)
+        public async Task<IActionResult> ObterAbortedMensal(
+            [FromQuery] int ano,
+            [FromQuery] int mesInicio = 1,
+            [FromQuery] int mesFim = 12)
         {
             try { return Ok(await _visaoGeralService.ObterAbortedMensais(ano, mesInicio, mesFim)); }
             catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
@@ -157,42 +165,60 @@ namespace SistemaProducao3D.API.Controllers
         // ============================================================
 
         [HttpGet("visao-geral/producao/impressora/anual")]
-        public async Task<IActionResult> ObterProducaoPorImpressoraAnual([FromQuery] int ano = 2026, [FromQuery] int mesInicio = 1, [FromQuery] int mesFim = 12)
+        public async Task<IActionResult> ObterProducaoPorImpressoraAnual(
+            [FromQuery] int ano,
+            [FromQuery] int mesInicio = 1,
+            [FromQuery] int mesFim = 12)
         {
             try { return Ok(await _visaoGeralService.ObterProducaoPorImpressoraAnual(ano, mesInicio, mesFim)); }
             catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
         }
 
         [HttpGet("visao-geral/prototipos/impressora/anual")]
-        public async Task<IActionResult> ObterPrototiposPorImpressoraAnual([FromQuery] int ano = 2026, [FromQuery] int mesInicio = 1, [FromQuery] int mesFim = 12)
+        public async Task<IActionResult> ObterPrototiposPorImpressoraAnual(
+            [FromQuery] int ano,
+            [FromQuery] int mesInicio = 1,
+            [FromQuery] int mesFim = 12)
         {
             try { return Ok(await _visaoGeralService.ObterPrototiposPorImpressoraAnual(ano, mesInicio, mesFim)); }
             catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
         }
 
         [HttpGet("visao-geral/erros/impressora/anual")]
-        public async Task<IActionResult> ObterErrosPorImpressoraAnual([FromQuery] int ano = 2026, [FromQuery] int mesInicio = 1, [FromQuery] int mesFim = 12)
+        public async Task<IActionResult> ObterErrosPorImpressoraAnual(
+            [FromQuery] int ano,
+            [FromQuery] int mesInicio = 1,
+            [FromQuery] int mesFim = 12)
         {
             try { return Ok(await _visaoGeralService.ObterErrosPorImpressoraAnual(ano, mesInicio, mesFim)); }
             catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
         }
 
         [HttpGet("visao-geral/peso/impressora/anual")]
-        public async Task<IActionResult> ObterPesoPorImpressoraAnual([FromQuery] int ano = 2026, [FromQuery] int mesInicio = 1, [FromQuery] int mesFim = 12)
+        public async Task<IActionResult> ObterPesoPorImpressoraAnual(
+            [FromQuery] int ano,
+            [FromQuery] int mesInicio = 1,
+            [FromQuery] int mesFim = 12)
         {
             try { return Ok(await _visaoGeralService.ObterPesoPorImpressoraAnual(ano, mesInicio, mesFim)); }
             catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
         }
 
         [HttpGet("visao-geral/failed/impressora/anual")]
-        public async Task<IActionResult> ObterFailedPorImpressoraAnual([FromQuery] int ano = 2026, [FromQuery] int mesInicio = 1, [FromQuery] int mesFim = 12)
+        public async Task<IActionResult> ObterFailedPorImpressoraAnual(
+            [FromQuery] int ano,
+            [FromQuery] int mesInicio = 1,
+            [FromQuery] int mesFim = 12)
         {
             try { return Ok(await _visaoGeralService.ObterFailedPorImpressoraAnual(ano, mesInicio, mesFim)); }
             catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
         }
 
         [HttpGet("visao-geral/aborted/impressora/anual")]
-        public async Task<IActionResult> ObterAbortedPorImpressoraAnual([FromQuery] int ano = 2026, [FromQuery] int mesInicio = 1, [FromQuery] int mesFim = 12)
+        public async Task<IActionResult> ObterAbortedPorImpressoraAnual(
+            [FromQuery] int ano,
+            [FromQuery] int mesInicio = 1,
+            [FromQuery] int mesFim = 12)
         {
             try { return Ok(await _visaoGeralService.ObterAbortedPorImpressoraAnual(ano, mesInicio, mesFim)); }
             catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
@@ -203,21 +229,28 @@ namespace SistemaProducao3D.API.Controllers
         // ============================================================
 
         [HttpGet("cards/kg")]
-        public async Task<IActionResult> ObterCardsKg([FromQuery] int ano = 2025, [FromQuery] int mesInicio = 1, [FromQuery] int mesFim = 12)
+        public async Task<IActionResult> ObterCardsKg(
+            [FromQuery] int ano,
+            [FromQuery] int mesInicio = 1,
+            [FromQuery] int mesFim = 12)
         {
             try { return Ok(await _cardService.ObterCardsKg(ano, mesInicio, mesFim)); }
             catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
         }
 
         [HttpGet("cards/capacidade/impressora")]
-        public async Task<IActionResult> ObterCapacidadePorImpressora([FromQuery] int ano = 2026, [FromQuery] int mes = 1)
+        public async Task<IActionResult> ObterCapacidadePorImpressora(
+            [FromQuery] int ano,
+            [FromQuery] int mes = 1)
         {
             try { return Ok(await _cardService.ObterCapacidadePorImpressora(ano, mes)); }
             catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
         }
 
         [HttpGet("cards/kg/impressora")]
-        public async Task<IActionResult> ObterKgPorImpressora([FromQuery] int ano = 2026, [FromQuery] int mes = 1)
+        public async Task<IActionResult> ObterKgPorImpressora(
+            [FromQuery] int ano,
+            [FromQuery] int mes = 1)
         {
             try { return Ok(await _cardService.ObterKgPorImpressora(ano, mes)); }
             catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
@@ -240,7 +273,7 @@ namespace SistemaProducao3D.API.Controllers
                     metricas = new
                     {
                         utilizacao = Math.Round(resumo.Utilizacao, 1),
-                        horasProdutivas = Math.Round(resumo.HorasProdutivas, 1), // ✅ 1 decimal, não Math.round
+                        horasProdutivas = Math.Round(resumo.HorasProdutivas, 1),
                         taxaSucesso = Math.Round(resumo.TaxaSucesso, 1)
                     },
                     distribuicao = new
@@ -248,15 +281,12 @@ namespace SistemaProducao3D.API.Controllers
                         producao = new
                         {
                             taxa = Math.Round(resumo.TaxaProducao, 1),
-                            horas = Math.Round(resumo.TempoProducaoTotal, 1)      // ✅ 1 decimal
+                            horas = Math.Round(resumo.TempoProducaoTotal, 1)
                         },
-                        // ✅ CORREÇÃO DEFINITIVA: pausas com 2 casas decimais
-                        // 0.027% com round=1 → 0.0 (invisível)
-                        // 0.027% com round=2 → 0.03 (visível)
                         pausas = new
                         {
-                            taxa = Math.Round(resumo.TaxaPausas, 2),             // ✅ 2 casas
-                            horas = Math.Round(resumo.TempoPausasTotal, 2)         // ✅ 2 casas
+                            taxa = Math.Round(resumo.TaxaPausas, 2),
+                            horas = Math.Round(resumo.TempoPausasTotal, 2)
                         },
                         ociosidade = new
                         {
@@ -282,8 +312,8 @@ namespace SistemaProducao3D.API.Controllers
                         pausas = resumo.TopMotivosPausas.Select(m => new
                         {
                             motivo = m.MotivoDescricao,
-                            taxa = Math.Round(m.Percentual, 2),            // ✅ 2 casas
-                            horas = Math.Round((decimal)m.TempoTotal / 60, 2), // ✅ 2 casas
+                            taxa = Math.Round(m.Percentual, 2),
+                            horas = Math.Round((decimal)m.TempoTotal / 60, 2),
                             ocorrencias = m.Ocorrencias
                         }),
                         ociosidade = resumo.TopMotivosOciosidade.Select(m => new
@@ -306,13 +336,11 @@ namespace SistemaProducao3D.API.Controllers
                         impressoraId = imp.MachineId,
                         impressoraNome = imp.MachineName,
                         taxaProducao = Math.Round((imp.TempoProducao / imp.TempoTotal) * 100, 1),
-                        // ✅ 2 casas decimais para pausas de cada impressora
                         taxaPausas = Math.Round((imp.TempoPausas / imp.TempoTotal) * 100, 2),
                         taxaOciosidade = Math.Round((imp.TempoOciosidade / imp.TempoTotal) * 100, 1),
                         taxaEsperaOperador = Math.Round((imp.TempoEsperaOperador / imp.TempoTotal) * 100, 1),
                         taxaManutencao = Math.Round((imp.TempoManutencao / imp.TempoTotal) * 100, 1),
                         horasProducao = Math.Round(imp.TempoProducao, 1),
-                        // ✅ 2 casas para horas de pausa (0.20h em vez de 0h)
                         horasPausas = Math.Round(imp.TempoPausas, 2),
                         horasOciosidade = Math.Round(imp.TempoOciosidade, 1),
                         jobsFinalizados = imp.JobsFinalizados,
@@ -355,7 +383,6 @@ namespace SistemaProducao3D.API.Controllers
                     {
                         taxaProducao = Math.Round((resumo.TempoProducao / tTotal) * 100, 1),
                         producao = Math.Round(resumo.TempoProducao, 1),
-                        // ✅ 2 casas decimais
                         taxaPausas = Math.Round((resumo.TempoPausas / tTotal) * 100, 2),
                         pausas = Math.Round(resumo.TempoPausas, 2),
                         taxaOciosidade = Math.Round((resumo.TempoOciosidade / tTotal) * 100, 1),
@@ -380,7 +407,6 @@ namespace SistemaProducao3D.API.Controllers
                         {
                             status = m.Status.ToString(),
                             motivo = m.MotivoDescricao,
-                            // ✅ pausas com 2 casas nos motivos também
                             horas = m.Status == StatusMaquina.Pausa
                                 ? Math.Round((decimal)m.TempoTotal / 60, 2)
                                 : Math.Round((decimal)m.TempoTotal / 60, 1),
@@ -395,7 +421,7 @@ namespace SistemaProducao3D.API.Controllers
                         data = dia.Data.ToString("yyyy-MM-dd"),
                         taxaProducao = Math.Round((dia.TempoProducao / 1440m) * 100, 1),
                         horasProducao = Math.Round(dia.TempoProducao / 60m, 1),
-                        horasPausas = Math.Round(dia.TempoPausas / 60m, 2), // ✅ 2 casas
+                        horasPausas = Math.Round(dia.TempoPausas / 60m, 2),
                         horasOciosidade = Math.Round(dia.TempoOciosidade / 60m, 1),
                         horasEsperaOperador = Math.Round(dia.TempoEsperaOperador / 60m, 1),
                         horasManutencao = Math.Round(dia.TempoManutencao / 60m, 1)
@@ -437,7 +463,6 @@ namespace SistemaProducao3D.API.Controllers
                     {
                         taxaProducao = Math.Round((resumo.TempoProducao / tTotal) * 100, 1),
                         horasProducao = Math.Round(resumo.TempoProducao / 60m, 1),
-                        // ✅ pausas com 2 casas no dia também
                         taxaPausas = Math.Round((resumo.TempoPausas / tTotal) * 100, 2),
                         horasPausas = Math.Round(resumo.TempoPausas / 60m, 2),
                         taxaOciosidade = Math.Round((resumo.TempoOciosidade / tTotal) * 100, 1),
@@ -460,8 +485,8 @@ namespace SistemaProducao3D.API.Controllers
                             .Select(m => new
                             {
                                 motivo = m.MotivoDescricao,
-                                horas = Math.Round((decimal)m.TempoTotal / 60, 2), // ✅
-                                taxa = Math.Round(m.Percentual, 2),               // ✅
+                                horas = Math.Round((decimal)m.TempoTotal / 60, 2),
+                                taxa = Math.Round(m.Percentual, 2),
                                 ocorrencias = m.Ocorrencias
                             }).Take(5),
                         ociosidade = resumo.Motivos
@@ -487,7 +512,6 @@ namespace SistemaProducao3D.API.Controllers
                     {
                         inicio = bloco.Inicio.ToString("HH:mm"),
                         fim = bloco.Fim.ToString("HH:mm"),
-                        // ✅ duracao em horas com 2 casas para pausas curtas
                         duracao = Math.Round((decimal)bloco.DuracaoMinutos / 60, 2),
                         status = bloco.Status.ToString(),
                         statusCor = ObterCorStatus(bloco.Status),
@@ -532,7 +556,7 @@ namespace SistemaProducao3D.API.Controllers
                         inicio = b.Inicio.ToString("HH:mm"),
                         fim = b.Fim.ToString("HH:mm"),
                         duracaoMinutos = Math.Round((decimal)b.DuracaoMinutos, 1),
-                        duracaoHoras = Math.Round((decimal)b.DuracaoMinutos / 60, 2), // ✅
+                        duracaoHoras = Math.Round((decimal)b.DuracaoMinutos / 60, 2),
                         status = b.Status.ToString(),
                         statusCor = ObterCorStatus(b.Status),
                         motivo = b.Motivo.ToString(),
@@ -543,7 +567,7 @@ namespace SistemaProducao3D.API.Controllers
                     resumoDia = new
                     {
                         producao = new { horas = Math.Round(resumo.TempoProducao / 60, 1), taxa = Math.Round((resumo.TempoProducao / den) * 100, 1) },
-                        pausas = new { horas = Math.Round(resumo.TempoPausas / 60, 2), taxa = Math.Round((resumo.TempoPausas / den) * 100, 2) }, // ✅
+                        pausas = new { horas = Math.Round(resumo.TempoPausas / 60, 2), taxa = Math.Round((resumo.TempoPausas / den) * 100, 2) },
                         ociosidade = new { horas = Math.Round(resumo.TempoOciosidade / 60, 1), taxa = Math.Round((resumo.TempoOciosidade / den) * 100, 1) },
                         esperaOperador = new { horas = Math.Round(resumo.TempoEsperaOperador / 60, 1), taxa = Math.Round((resumo.TempoEsperaOperador / den) * 100, 1) },
                         manutencao = new { horas = Math.Round(resumo.TempoManutencao / 60, 1), taxa = Math.Round((resumo.TempoManutencao / den) * 100, 1) }
@@ -586,12 +610,10 @@ namespace SistemaProducao3D.API.Controllers
                             impressoraNome = resumo.MachineName,
                             taxaProducao = Math.Round((resumo.TempoProducao / tempoTotal) * 100, 1),
                             taxaOciosidade = Math.Round((resumo.TempoOciosidade / tempoTotal) * 100, 1),
-                            // ✅ CORREÇÃO DEFINITIVA: 2 casas decimais
-                            // 0.027% com round=1 → 0.0 | com round=2 → 0.03 ← VISÍVEL
                             taxaPausas = Math.Round((resumo.TempoPausas / tempoTotal) * 100, 2),
                             horasProducao = Math.Round(resumo.TempoProducao, 1),
                             horasOciosidade = Math.Round(resumo.TempoOciosidade, 1),
-                            horasPausas = Math.Round(resumo.TempoPausas, 2), // ✅
+                            horasPausas = Math.Round(resumo.TempoPausas, 2),
                             jobsFinalizados = resumo.JobsFinalizados,
                             jobsAbortados = resumo.JobsAbortados,
                             taxaEsperaOperador = Math.Round((resumo.TempoEsperaOperador / tempoTotal) * 100, 1),
@@ -612,7 +634,6 @@ namespace SistemaProducao3D.API.Controllers
                     {
                         taxaProducaoMedia = Math.Round(analises.Average(a => (decimal)((dynamic)a).taxaProducao), 1),
                         taxaOciosidadeMedia = Math.Round(analises.Average(a => (decimal)((dynamic)a).taxaOciosidade), 1),
-                        // ✅ 2 casas na média também
                         taxaPausasMedia = Math.Round(analises.Average(a => (decimal)((dynamic)a).taxaPausas), 2)
                     }
                     : new { taxaProducaoMedia = 0m, taxaOciosidadeMedia = 0m, taxaPausasMedia = 0m };
@@ -663,7 +684,7 @@ namespace SistemaProducao3D.API.Controllers
                     tempos = new
                     {
                         producao = new { horas = Math.Round(resumo.TempoProducao, 1), taxa = Math.Round((resumo.TempoProducao / tempoTotal) * 100, 1) },
-                        pausas = new { horas = Math.Round(resumo.TempoPausas, 2), taxa = Math.Round((resumo.TempoPausas / tempoTotal) * 100, 2) }, // ✅
+                        pausas = new { horas = Math.Round(resumo.TempoPausas, 2), taxa = Math.Round((resumo.TempoPausas / tempoTotal) * 100, 2) },
                         ociosidade = new { horas = Math.Round(resumo.TempoOciosidade, 1), taxa = Math.Round((resumo.TempoOciosidade / tempoTotal) * 100, 1) },
                         esperaOperador = new { horas = Math.Round(resumo.TempoEsperaOperador, 1), taxa = Math.Round((resumo.TempoEsperaOperador / tempoTotal) * 100, 1) },
                         manutencao = new { horas = Math.Round(resumo.TempoManutencao, 1), taxa = Math.Round((resumo.TempoManutencao / tempoTotal) * 100, 1) }
@@ -880,16 +901,24 @@ namespace SistemaProducao3D.API.Controllers
                         impressoraNome = analise.MachineName,
                         taxaProducao = Math.Round(analise.TaxaProducao, 1),
                         taxaOciosidade = Math.Round(analise.TaxaOciosidade, 1),
-                        taxaPausas = Math.Round(analise.TaxaPausas, 2),  // ✅
+                        taxaPausas = Math.Round(analise.TaxaPausas, 2),
                         horasProducao = Math.Round(analise.TempoProducao / 60, 1),
                         horasOciosidade = Math.Round(analise.TempoOciosidade / 60, 1),
-                        horasPausas = Math.Round(analise.TempoPausas / 60, 2), // ✅
+                        horasPausas = Math.Round(analise.TempoPausas / 60, 2),
                         jobsFinalizados = analise.JobsFinalizados,
                         jobsAbortados = analise.JobsAbortados
                     }
                 });
             }
             catch (Exception ex) { return StatusCode(500, new { erro = ex.Message, detalhes = ex.InnerException?.Message, stackTrace = ex.StackTrace }); }
+        }
+
+        [HttpPost("cache/limpar")]
+        public IActionResult LimparCache([FromServices] IMemoryCache cache)
+        {
+            if (cache is MemoryCache mc)
+                mc.Compact(1.0);
+            return Ok(new { mensagem = "Cache limpo!" });
         }
 
         // ============================================================

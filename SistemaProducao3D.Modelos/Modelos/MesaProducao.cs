@@ -165,7 +165,7 @@ namespace SistemaProducao3D.Modelos.Modelos
                 return;
             }
 
-            var name = JobName.Trim();
+            var name = JobName?.ToLowerInvariant() ?? "";
 
             // 1. Recondicionado (maior prioridade)
             if (IsRecondicionado || name.ToLower().Contains("recond"))
@@ -176,7 +176,10 @@ namespace SistemaProducao3D.Modelos.Modelos
             }
 
             // 2. Protótipo - ✅ ALTERADO: Apenas "Testes" com maiúscula e regex v\d+
-            if (name.Contains("Testes"))
+            if (name.Contains("teste") ||        // pega Teste, Testes, TesteResistencia, TESTE
+                 name.Contains("prototipo") ||
+                 name.Contains("protótipo") ||
+                 name.Contains("material"))       // pega TestesMateriaisXXX de janeiro
             {
                 IsPrototype = true;
                 JobType = "Prototipo";
