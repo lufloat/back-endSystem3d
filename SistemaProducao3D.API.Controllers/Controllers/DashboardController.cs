@@ -226,7 +226,7 @@ namespace SistemaProducao3D.API.Controllers
 
         // ============================================================
         // CARDS
-        // ============================================================
+        // ==============================================================
 
         [HttpGet("cards/kg")]
         public async Task<IActionResult> ObterCardsKg(
