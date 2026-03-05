@@ -6,6 +6,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Business_Logic.Repositories.Interfaces;
+using Microsoft.EntityFrameworkCore;
 
 namespace Business_Logic.Serviços.Sync
 {
@@ -29,7 +30,6 @@ namespace Business_Logic.Serviços.Sync
         {
             var inicio = new DateTime(ano, mes, 1, 0, 0, 0, DateTimeKind.Utc);
             var fim = new DateTime(ano, mes, DateTime.DaysInMonth(ano, mes), 23, 59, 59, DateTimeKind.Utc);
-
             await SincronizarPorPeriodoAsync(inicio, fim);
         }
 
@@ -37,7 +37,6 @@ namespace Business_Logic.Serviços.Sync
         {
             var inicio = new DateTime(anoInicio, mesInicio, 1, 0, 0, 0, DateTimeKind.Utc);
             var fim = new DateTime(anoFim, mesFim, DateTime.DaysInMonth(anoFim, mesFim), 23, 59, 59, DateTimeKind.Utc);
-
             await SincronizarPorPeriodoAsync(inicio, fim);
         }
 
@@ -65,8 +64,8 @@ namespace Business_Logic.Serviços.Sync
             {
                 Console.WriteLine($"🖨️  {printer.Name} (ID: {printer.Id})");
 
+                // ── Sincronizar JOBS ──────────────────────────────────────
                 var jobs = await _ultimakerClient.GetJobsAsync(printer.Id, inicio, fim);
-
                 int novos = 0, atualizados = 0, ignorados = 0;
 
                 foreach (var job in jobs)
@@ -82,7 +81,6 @@ namespace Business_Logic.Serviços.Sync
                     }
                     else
                     {
-                        // ✅ Só atualiza se o status mudou ou se foi finalizado
                         var statusAtual = NormalizarStatus(job.Result);
                         var jobFinalizado = JobFinalizado(statusAtual);
 
@@ -99,7 +97,64 @@ namespace Business_Logic.Serviços.Sync
                 }
 
                 await _context.SaveChangesAsync();
-                Console.WriteLine($"   ✅ Novos: {novos} | Atualizados: {atualizados} | Ignorados: {ignorados}\n");
+                Console.WriteLine($"   ✅ Jobs — Novos: {novos} | Atualizados: {atualizados} | Ignorados: {ignorados}");
+
+                // ── Sincronizar EVENTOS ───────────────────────────────────
+                try
+                {
+                    // Expande janela ±1 dia para capturar eventos cross-midnight
+                    var inicioEventos = inicio.AddDays(-1);
+                    var fimEventos = fim.AddDays(1);
+
+                    var eventos = await _ultimakerClient.GetEventsAsync(printer.Id, inicioEventos, fimEventos);
+
+                    // Filtra apenas eventos relevantes para timeline
+                    var eventosFiltrados = eventos.Where(e =>
+                        e.TypeId == 131072 || // started
+                        e.TypeId == 131073 || // paused
+                        e.TypeId == 131074 || // resumed
+                        e.TypeId == 131075 || // aborted
+                        e.TypeId == 131076 || // finished
+                        e.TypeId == 131077    // cleared
+                    ).ToList();
+
+                    int eventosNovos = 0;
+
+                    foreach (var evento in eventosFiltrados)
+                    {
+                        var jobUuid = evento.GetJobUuid();
+                        if (string.IsNullOrEmpty(jobUuid)) continue;
+
+                        var timeUtc = DateTime.SpecifyKind(evento.Time, DateTimeKind.Utc);
+
+                        // Evita duplicatas usando o índice único
+                        var existe = await _context.EventosImpressora.AnyAsync(e =>
+                            e.MachineId == printer.Id &&
+                            e.JobUuid == jobUuid &&
+                            e.TypeId == evento.TypeId &&
+                            e.Time == timeUtc);
+
+                        if (!existe)
+                        {
+                            _context.EventosImpressora.Add(new EventoImpressora
+                            {
+                                MachineId = printer.Id,
+                                JobUuid = jobUuid,
+                                Time = timeUtc,
+                                TypeId = evento.TypeId,
+                                Message = evento.Message ?? string.Empty
+                            });
+                            eventosNovos++;
+                        }
+                    }
+
+                    await _context.SaveChangesAsync();
+                    Console.WriteLine($"   ✅ Eventos — Novos: {eventosNovos} | Total API: {eventosFiltrados.Count}\n");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"   ⚠️  Erro ao sincronizar eventos de {printer.Name}: {ex.Message}\n");
+                }
             }
         }
 
@@ -157,7 +212,6 @@ namespace Business_Logic.Serviços.Sync
 
         private async Task CalcularPesoMateriais(MesaProducao mesa, UltimakerJob job)
         {
-            // Material 0
             if (job.Material0Guid.HasValue && mesa.Material0Amount > 0)
             {
                 var material0 = await _materialRepository.ObterOuCriarMaterial(
@@ -165,12 +219,10 @@ namespace Business_Logic.Serviços.Sync
                     job.Material0Name ?? "Material 0",
                     job.Material0Brand ?? "Generic"
                 );
-
                 mesa.Material0Guid = material0.UltimakerMaterialGuid;
                 mesa.Material0WeightG = material0.ConverterVolumeMm3ParaGramas(mesa.Material0Amount);
             }
 
-            // Material 1
             if (job.Material1Guid.HasValue && mesa.Material1Amount > 0)
             {
                 var material1 = await _materialRepository.ObterOuCriarMaterial(
@@ -178,7 +230,6 @@ namespace Business_Logic.Serviços.Sync
                     job.Material1Name ?? "Material 1",
                     job.Material1Brand ?? "Generic"
                 );
-
                 mesa.Material1Guid = material1.UltimakerMaterialGuid;
                 mesa.Material1WeightG = material1.ConverterVolumeMm3ParaGramas(mesa.Material1Amount);
             }
@@ -192,13 +243,11 @@ namespace Business_Logic.Serviços.Sync
                    status == "aborted";
         }
 
-        // ✅ CORRIGIDO: Normalização case-insensitive
         private static string NormalizarStatus(string? status)
         {
             if (string.IsNullOrWhiteSpace(status))
                 return "in_progress";
 
-            // ✅ CRITICAL FIX: Forçar lowercase ANTES de comparar
             var normalized = status.Trim().ToLowerInvariant();
 
             return normalized switch

@@ -14,6 +14,7 @@ namespace SistemaProducao3D.Data.Context
 
         public DbSet<MesaProducao> MesasProducao { get; set; }
         public DbSet<Material> Materiais { get; set; }
+        public DbSet<EventoImpressora> EventosImpressora { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -30,17 +31,12 @@ namespace SistemaProducao3D.Data.Context
                 entity.Property(e => e.Id).HasColumnName("id");
                 entity.Property(e => e.DatetimeStarted).HasColumnName("datetime_started").IsRequired();
                 entity.Property(e => e.DatetimeFinished).HasColumnName("datetime_finished");
-
-                // Volume em mm³ (vem da API)
                 entity.Property(e => e.Material0Amount).HasColumnName("material_0_amount");
                 entity.Property(e => e.Material1Amount).HasColumnName("material_1_amount");
-
-                // ✅ NOVO: GUIDs e pesos
                 entity.Property(e => e.Material0Guid).HasColumnName("material_0_guid");
                 entity.Property(e => e.Material1Guid).HasColumnName("material_1_guid");
                 entity.Property(e => e.Material0WeightG).HasColumnName("material_0_weight_g");
                 entity.Property(e => e.Material1WeightG).HasColumnName("material_1_weight_g");
-
                 entity.Property(e => e.PrintTime).HasColumnName("print_time");
                 entity.Property(e => e.Status).HasColumnName("status");
                 entity.Property(e => e.MesaId).HasColumnName("mesa_id");
@@ -86,6 +82,29 @@ namespace SistemaProducao3D.Data.Context
                     .HasColumnName("created_at")
                     .HasDefaultValueSql("CURRENT_TIMESTAMP");
             });
+
+            // ===================================
+            // EVENTOS IMPRESSORA
+            // ===================================
+            modelBuilder.Entity<EventoImpressora>(entity =>
+            {
+                entity.ToTable("eventos_impressora");
+                entity.HasKey(e => e.Id);
+
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.MachineId).HasColumnName("machine_id").IsRequired();
+                entity.Property(e => e.JobUuid).HasColumnName("job_uuid").HasMaxLength(100).IsRequired();
+                entity.Property(e => e.Time).HasColumnName("time").IsRequired();
+                entity.Property(e => e.TypeId).HasColumnName("type_id").IsRequired();
+                entity.Property(e => e.Message).HasColumnName("message").HasMaxLength(500);
+
+                // Índice para buscas por período e impressora
+                entity.HasIndex(e => new { e.MachineId, e.Time });
+                entity.HasIndex(e => e.JobUuid);
+
+                // Evita duplicatas
+                entity.HasIndex(e => new { e.MachineId, e.JobUuid, e.TypeId, e.Time }).IsUnique();
+            });
         }
 
         public override int SaveChanges()
@@ -112,13 +131,9 @@ namespace SistemaProducao3D.Data.Context
                     if (prop.CurrentValue is DateTime dateTime)
                     {
                         if (dateTime.Kind == DateTimeKind.Unspecified)
-                        {
                             prop.CurrentValue = DateTime.SpecifyKind(dateTime, DateTimeKind.Utc);
-                        }
                         else if (dateTime.Kind == DateTimeKind.Local)
-                        {
                             prop.CurrentValue = dateTime.ToUniversalTime();
-                        }
                     }
                 }
             }

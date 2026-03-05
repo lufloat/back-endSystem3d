@@ -1,17 +1,14 @@
 ﻿// ========================================
-// TimelineService.cs - VERSÃO FINAL CORRIGIDA
-// Localização: Business_Logic/Serviços/TimelineService.cs
-// ========================================
-// ✅ CORREÇÃO 1: filtro cross-day (InicioPausa.Date OU FimPausa.Date)
-// ✅ CORREÇÃO 2: janela expandida +1 dia para jobs cross-midnight
-// ✅ CORREÇÃO 3: taxas calculadas como média das impressoras (não pool total)
-// ✅ CORREÇÃO 4: TaxaSucesso descomentada e corrigida
+// TimelineService.cs - VERSÃO COM PERSISTÊNCIA DE EVENTOS
+// Lê eventos do banco de dados em vez da API das impressoras
 // ========================================
 
 using Business_Logic.Repositories.Interfaces;
 using Business_Logic.Serviços.Interfaces;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using SistemaProducao3D.Data.Context;
 using SistemaProducao3D.Integration.Ultimaker;
 using SistemaProducao3D.Modelos.Modelos;
 using SistemaProducao3D.Modelos.Timeline;
@@ -32,6 +29,7 @@ namespace Business_Logic.Serviços
         private readonly IUltimakerClient _ultimakerClient;
         private readonly IMemoryCache _cache;
         private readonly ILogger<TimelineService> _logger;
+        private readonly DatabaseContext _context;
 
         private static readonly TimeSpan CACHE_DURATION = TimeSpan.FromHours(4);
         private static readonly TimeSpan TIMEOUT_PER_PRINTER = TimeSpan.FromSeconds(45);
@@ -41,19 +39,15 @@ namespace Business_Logic.Serviços
             IProducaoRepository producaoRepository,
             IUltimakerClient ultimakerClient,
             IMemoryCache cache,
-            ILogger<TimelineService> logger)
+            ILogger<TimelineService> logger,
+            DatabaseContext context)
         {
             _producaoRepository = producaoRepository;
             _ultimakerClient = ultimakerClient;
             _cache = cache;
             _logger = logger;
+            _context = context;
         }
-
-        // NOTA IMPORTANTE SOBRE TAXAS DE PAUSA:
-        // As pausas detectadas via eventos são genuinamente curtas (segundos a minutos).
-        // Ex: job 96a37aa0 pausou por 12 SEGUNDOS. Numa janela de 744h mensais,
-        // isso resulta em taxas de 0.01~0.05% — valores reais, não bugs.
-        // Usamos 2 casas decimais para não perder esses valores no arredondamento.
 
         // ========================================
         // RESUMO CONSOLIDADO
@@ -75,8 +69,6 @@ namespace Business_Logic.Serviços
             var printers = await _ultimakerClient.GetPrintersAsync();
             var printersAtivas = printers.Where(p => p.IsActive).ToList();
 
-            _logger.LogInformation("   🖨️  {Count} impressoras ativas", printersAtivas.Count);
-
             var inicioMes = new DateTime(ano, mes, 1, 0, 0, 0, DateTimeKind.Utc);
             var fimMes = inicioMes.AddMonths(1).AddSeconds(-1);
 
@@ -85,8 +77,9 @@ namespace Business_Logic.Serviços
             swJobs.Stop();
             _logger.LogInformation("   📦 {Count} jobs carregados em {Ms}ms", todosJobsMes.Count, swJobs.ElapsedMilliseconds);
 
+            // ✅ Lê eventos do banco em vez da API
             var swEventos = Stopwatch.StartNew();
-            var eventosPausaMes = await BuscarEventosPausaMesAsync(printersAtivas, inicioMes, fimMes);
+            var eventosPausaMes = await BuscarEventosPausaMesDoBancoAsync(inicioMes, fimMes);
             swEventos.Stop();
             _logger.LogInformation("   ⏸️  {Count} eventos de pausa carregados em {Ms}ms", eventosPausaMes.Count, swEventos.ElapsedMilliseconds);
 
@@ -109,8 +102,6 @@ namespace Business_Logic.Serviços
                 var swPrinter = Stopwatch.StartNew();
                 try
                 {
-                    using var cts = new CancellationTokenSource(TIMEOUT_PER_PRINTER);
-
                     var jobsImpressora = jobsPorImpressora.ContainsKey(printer.Id)
                         ? jobsPorImpressora[printer.Id]
                         : new List<MesaProducao>();
@@ -147,7 +138,6 @@ namespace Business_Logic.Serviços
 
             resumo.Impressoras = resumosImpressoras.OrderBy(i => i.MachineName).ToList();
 
-            // ── Totais absolutos (em horas) ──────────────────────────────────
             decimal tempoTotalProducao = resumo.Impressoras.Sum(i => i.TempoProducao);
             decimal tempoTotalPausas = resumo.Impressoras.Sum(i => i.TempoPausas);
             decimal tempoTotalOciosidade = resumo.Impressoras.Sum(i => i.TempoOciosidade);
@@ -164,7 +154,6 @@ namespace Business_Logic.Serviços
             resumo.TempoEsperaOperadorTotal = tempoTotalEsperaOperador;
             resumo.TempoManutencaoTotal = tempoTotalManutencao;
 
-            // ── ✅ CORREÇÃO 3: taxas como MÉDIA das impressoras individuais ──
             var impressorasComDados = resumo.Impressoras.Where(i => i.TempoTotal > 0).ToList();
             var n = impressorasComDados.Count > 0 ? (decimal)impressorasComDados.Count : 1;
 
@@ -176,7 +165,6 @@ namespace Business_Logic.Serviços
                 resumo.TaxaEsperaOperador = Math.Round(impressorasComDados.Sum(i => (i.TempoEsperaOperador / i.TempoTotal) * 100) / n, 2);
                 resumo.TaxaManutencao = Math.Round(impressorasComDados.Sum(i => (i.TempoManutencao / i.TempoTotal) * 100) / n, 2);
 
-                // Garante que soma = 100%
                 var somaAtual = resumo.TaxaProducao + resumo.TaxaPausas + resumo.TaxaOciosidade +
                                 resumo.TaxaEsperaOperador + resumo.TaxaManutencao;
                 if (Math.Abs(somaAtual - 100) > 0.01m)
@@ -188,15 +176,12 @@ namespace Business_Logic.Serviços
 
             int totalJobsFinalizados = resumo.Impressoras.Sum(i => i.JobsFinalizados);
             int totalJobsAbortados = resumo.Impressoras.Sum(i => i.JobsAbortados);
-
-            // ✅ CORREÇÃO 4: TaxaSucesso calculada corretamente
             int totalJobs = totalJobsFinalizados + totalJobsAbortados;
             resumo.TaxaSucesso = totalJobs > 0
                 ? Math.Round((decimal)totalJobsFinalizados / totalJobs * 100, 1)
                 : 0;
 
             var todosMotivosLista = todosMotivos.ToList();
-
             resumo.TopMotivosPausas = ConsolidarMotivos(todosMotivosLista, StatusMaquina.Pausa, tempoTotalPausas * 60);
             resumo.TopMotivosOciosidade = ConsolidarMotivos(todosMotivosLista, StatusMaquina.Ociosidade, tempoTotalOciosidade * 60);
             resumo.TopMotivosEsperaOperador = ConsolidarMotivos(todosMotivosLista, StatusMaquina.EsperaOperador, tempoTotalEsperaOperador * 60);
@@ -211,59 +196,58 @@ namespace Business_Logic.Serviços
         }
 
         // ========================================
-        // BUSCAR EVENTOS DE PAUSA DA API
-        // ✅ CORREÇÃO 2: janela +1 dia para capturar jobs cross-midnight
+        // ✅ NOVO: BUSCAR EVENTOS DO BANCO DE DADOS
+        // Substitui BuscarEventosPausaMesAsync que chamava a API
         // ========================================
 
-        private async Task<List<EventoPausa>> BuscarEventosPausaMesAsync(
-            List<UltimakerPrinterConfig> printers,
-            DateTime inicioMes,
-            DateTime fimMes)
+        private async Task<List<EventoPausa>> BuscarEventosPausaMesDoBancoAsync(DateTime inicioMes, DateTime fimMes)
         {
-            var todosEventos = new ConcurrentBag<EventoPausa>();
+            // Expande janela ±1 dia para capturar pausas cross-midnight
+            var inicioJanela = inicioMes.AddDays(-1);
+            var fimJanela = fimMes.AddDays(1);
 
-            var tasks = printers.Select(async printer =>
+            var eventosDb = await _context.EventosImpressora
+                .Where(e =>
+                    e.Time >= inicioJanela &&
+                    e.Time <= fimJanela &&
+                    (e.TypeId == 131073 || e.TypeId == 131074 || e.TypeId == 131075))
+                .OrderBy(e => e.MachineId)
+                .ThenBy(e => e.Time)
+                .ToListAsync();
+
+            var pausas = new List<EventoPausa>();
+
+            var porImpressora = eventosDb.GroupBy(e => e.MachineId);
+
+            foreach (var grupoPrinter in porImpressora)
             {
-                try
+                var porJob = grupoPrinter.GroupBy(e => e.JobUuid);
+
+                foreach (var grupoJob in porJob)
                 {
-                    // ✅ Expande janela ±1 dia para capturar jobs cross-day/cross-midnight
-                    var inicioJanela = inicioMes.AddDays(-1);
-                    var fimJanela = fimMes.AddDays(1);
+                    var eventos = grupoJob.OrderBy(e => e.Time).ToList();
 
-                    var eventos = await _ultimakerClient.GetEventsAsync(printer.Id, inicioJanela, fimJanela);
-
-                    var eventosPausa = eventos.Where(e =>
-                        e.TypeId == 131073 ||  // Print paused
-                        e.TypeId == 131074 ||  // Print resumed
-                        e.TypeId == 131075     // Print aborted
-                    ).OrderBy(e => e.Time).ToList();
-
-                    for (int i = 0; i < eventosPausa.Count; i++)
+                    for (int i = 0; i < eventos.Count; i++)
                     {
-                        var evento = eventosPausa[i];
+                        var evento = eventos[i];
                         if (evento.TypeId != 131073) continue; // só processa "paused"
 
-                        var jobUuid = evento.GetJobUuid();
-
-                        var eventoFim = eventosPausa
+                        var eventoFim = eventos
                             .Skip(i + 1)
-                            .FirstOrDefault(e =>
-                                (e.TypeId == 131074 || e.TypeId == 131075) &&
-                                e.Time > evento.Time &&
-                                e.GetJobUuid() == jobUuid);
+                            .FirstOrDefault(e => e.TypeId == 131074 || e.TypeId == 131075);
 
                         if (eventoFim == null) continue;
 
                         var duracao = Math.Round((decimal)(eventoFim.Time - evento.Time).TotalMinutes, 2);
-
                         if (duracao <= 0 || duracao > 2400) continue;
 
+                        // Filtra pausas fora do mês
                         if (eventoFim.Time < inicioMes || evento.Time > fimMes) continue;
 
-                        todosEventos.Add(new EventoPausa
+                        pausas.Add(new EventoPausa
                         {
-                            MachineId = printer.Id,
-                            JobUuid = jobUuid,
+                            MachineId = grupoPrinter.Key,
+                            JobUuid = grupoJob.Key,
                             InicioPausa = evento.Time,
                             FimPausa = eventoFim.Time,
                             DuracaoMinutos = duracao,
@@ -273,24 +257,14 @@ namespace Business_Logic.Serviços
                             TipoFim = eventoFim.TypeId == 131074 ? "resumed" : "aborted"
                         });
                     }
-
-                    _logger.LogDebug("      Impressora {PrinterId}: {Count} pausas detectadas",
-                        printer.Id,
-                        todosEventos.Count(e => e.MachineId == printer.Id));
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Erro ao buscar eventos de pausa para {PrinterId}", printer.Id);
-                }
-            });
+            }
 
-            await Task.WhenAll(tasks);
-            return todosEventos.OrderBy(e => e.InicioPausa).ToList();
+            return pausas.OrderBy(p => p.InicioPausa).ToList();
         }
 
         // ========================================
         // PROCESSAR MÊS COM PAUSAS
-        // ✅ CORREÇÃO 1: filtro considera InicioPausa.Date OU FimPausa.Date
         // ========================================
 
         private ResumoMensal ProcessarResumoMensalComPausas(
@@ -325,7 +299,6 @@ namespace Business_Logic.Serviços
                     .OrderBy(j => j.DatetimeStarted)
                     .ToList();
 
-                // ✅ CORREÇÃO 1: inclui pausa se INÍCIO ou FIM cai no dia
                 var eventosPausaDia = eventosPausaMes
                     .Where(e => e.InicioPausa.Date == data.Date || e.FimPausa.Date == data.Date)
                     .ToList();
@@ -371,24 +344,21 @@ namespace Business_Logic.Serviços
 
             resumo.Dias = resumosDias;
 
-            // Totais em MINUTOS
             decimal tempoTotalProducao = resumo.Dias.Sum(d => d.TempoProducao);
             decimal tempoTotalPausas = resumo.Dias.Sum(d => d.TempoPausas);
             decimal tempoTotalOciosidade = resumo.Dias.Sum(d => d.TempoOciosidade);
             decimal tempoTotalEsperaOperador = resumo.Dias.Sum(d => d.TempoEsperaOperador);
             decimal tempoTotalManutencao = resumo.Dias.Sum(d => d.TempoManutencao);
 
-            // Converte minutos → horas para propriedades do resumo
             resumo.TempoProducao = Math.Round(tempoTotalProducao / 60, 1);
             resumo.TempoPausas = Math.Round(tempoTotalPausas / 60, 2);
             resumo.TempoOciosidade = Math.Round(tempoTotalOciosidade / 60, 1);
             resumo.TempoEsperaOperador = Math.Round(tempoTotalEsperaOperador / 60, 1);
             resumo.TempoManutencao = Math.Round(tempoTotalManutencao / 60, 1);
             resumo.TempoTotal = resumo.TempoProducao + resumo.TempoPausas +
-                                         resumo.TempoOciosidade + resumo.TempoEsperaOperador +
-                                         resumo.TempoManutencao;
+                                resumo.TempoOciosidade + resumo.TempoEsperaOperador +
+                                resumo.TempoManutencao;
 
-            // Calcula percentual de cada motivo em relação ao total do seu status
             foreach (var motivo in todosMotivos.Values)
             {
                 var tempoTotalStatus = motivo.Status switch
@@ -409,7 +379,6 @@ namespace Business_Logic.Serviços
             resumo.Motivos = todosMotivos.Values.OrderByDescending(m => m.TempoTotal).ToList();
             resumo.JobsFinalizados = todosJobsMes.Count(j => j.IsSucess);
             resumo.JobsAbortados = todosJobsMes.Count(j => !j.IsSucess);
-            // TaxaSucesso é calculada automaticamente pelo modelo ResumoMensal
 
             return resumo;
         }
@@ -441,7 +410,6 @@ namespace Business_Logic.Serviços
                 return blocos;
             }
 
-            // Ociosidade antes do primeiro job
             if (jobs.First().DatetimeStarted > inicioDia)
             {
                 var dur = (int)(jobs.First().DatetimeStarted - inicioDia).TotalMinutes;
@@ -488,7 +456,6 @@ namespace Business_Logic.Serviços
 
                 foreach (var pausa in pausasDoJob)
                 {
-                    // Produção ANTES da pausa
                     if (pausa.InicioPausa > momentoAtual)
                     {
                         var durProd = (int)(pausa.InicioPausa - momentoAtual).TotalMinutes;
@@ -508,7 +475,6 @@ namespace Business_Logic.Serviços
                         }
                     }
 
-                    // PAUSA
                     blocos.Add(new BlocoTimeline
                     {
                         Inicio = pausa.InicioPausa,
@@ -526,7 +492,6 @@ namespace Business_Logic.Serviços
                     momentoAtual = pausa.FimPausa;
                 }
 
-                // Produção APÓS última pausa (ou produção total se não houve pausas)
                 if (momentoAtual < job.DatetimeFinished.Value)
                 {
                     var durProd = (int)(job.DatetimeFinished.Value - momentoAtual).TotalMinutes;
@@ -546,7 +511,6 @@ namespace Business_Logic.Serviços
                     }
                 }
 
-                // Espera operador após job
                 DateTime fimEspera = job.DatetimeFinished.Value.AddMinutes(TEMPO_ESPERA_PADRAO_MIN);
 
                 if (i + 1 < jobs.Count && jobs[i + 1].DatetimeStarted < fimEspera)
@@ -568,7 +532,6 @@ namespace Business_Logic.Serviços
                     });
                 }
 
-                // Ociosidade entre jobs
                 if (i + 1 < jobs.Count)
                 {
                     var proximoJob = jobs[i + 1];
@@ -590,7 +553,6 @@ namespace Business_Logic.Serviços
                 }
             }
 
-            // Ociosidade após último job até fim do dia
             if (blocos.Any())
             {
                 var ultimoBloco = blocos.OrderBy(b => b.Fim).Last();
@@ -612,7 +574,6 @@ namespace Business_Logic.Serviços
                 }
             }
 
-            // Garante exatamente 1440 minutos no dia
             var totalMinutos = blocos.Sum(b => b.DuracaoMinutos);
             if (totalMinutos != 1440 && blocos.Any())
             {
@@ -637,11 +598,11 @@ namespace Business_Logic.Serviços
             public DateTime FimPausa { get; set; }
             public decimal DuracaoMinutos { get; set; }
             public string Motivo { get; set; }
-            public string TipoFim { get; set; } // "resumed" ou "aborted"
+            public string TipoFim { get; set; }
         }
 
         // ========================================
-        // CONSOLIDAR MOTIVOS (TOP 5 por status)
+        // CONSOLIDAR MOTIVOS
         // ========================================
 
         private List<MotivoConsolidado> ConsolidarMotivos(
@@ -685,8 +646,9 @@ namespace Business_Logic.Serviços
             var fimMes = new DateTime(ano, mes, DateTime.DaysInMonth(ano, mes), 23, 59, 59, DateTimeKind.Utc);
 
             var todosJobsMes = await _producaoRepository.ObterJobsPorMaquinaEPeriodo(maquinaId, inicioMes, fimMes);
-            var eventosPausaMes = await BuscarEventosPausaMesAsync(
-                new List<UltimakerPrinterConfig> { printer }, inicioMes, fimMes);
+
+            // ✅ Lê eventos do banco
+            var eventosPausaMes = await BuscarEventosPausaMesDoBancoAsync(inicioMes, fimMes);
 
             var resumo = ProcessarResumoMensalComPausas(
                 maquinaId,
@@ -713,8 +675,8 @@ namespace Business_Logic.Serviços
             var inicioDia = new DateTime(data.Year, data.Month, data.Day, 0, 0, 0, DateTimeKind.Utc);
             var fimDia = inicioDia.AddDays(1);
 
-            var eventosPausa = await BuscarEventosPausaMesAsync(
-                new List<UltimakerPrinterConfig> { printer }, inicioDia, fimDia);
+            // ✅ Lê eventos do banco
+            var eventosPausa = await BuscarEventosPausaMesDoBancoAsync(inicioDia, fimDia);
 
             var timeline = ConstruirTimelineComPausas(
                 jobs,
@@ -770,19 +732,16 @@ namespace Business_Logic.Serviços
         }
 
         // ========================================
-        // TIMELINE POR DIA (compatibilidade)
+        // TIMELINE POR DIA
         // ========================================
 
         public async Task<List<BlocoTimeline>> ObterTimelineDiaAsync(int maquinaId, DateTime data)
         {
             var jobs = await _producaoRepository.ObterJobsPorMaquinaEData(maquinaId, data);
-            var printer = (await _ultimakerClient.GetPrintersAsync()).FirstOrDefault(p => p.Id == maquinaId);
-
             var inicioDia = new DateTime(data.Year, data.Month, data.Day, 0, 0, 0, DateTimeKind.Utc);
             var fimDia = inicioDia.AddDays(1);
 
-            var eventosPausa = await BuscarEventosPausaMesAsync(
-                new List<UltimakerPrinterConfig> { printer }, inicioDia, fimDia);
+            var eventosPausa = await BuscarEventosPausaMesDoBancoAsync(inicioDia, fimDia);
 
             return ConstruirTimelineComPausas(
                 jobs,
@@ -792,17 +751,13 @@ namespace Business_Logic.Serviços
         }
 
         public async Task<List<BlocoTimeline>> ObterTimelineEnriquecidaAsync(
-            int maquinaId,
-            DateTime data,
-            bool incluirEventos = true)
+            int maquinaId, DateTime data, bool incluirEventos = true)
         {
             return await ObterTimelineDiaAsync(maquinaId, data);
         }
 
         public async Task<Dictionary<DateTime, List<BlocoTimeline>>> ObterTimelinePeriodoAsync(
-            int maquinaId,
-            DateTime dataInicio,
-            DateTime dataFim)
+            int maquinaId, DateTime dataInicio, DateTime dataFim)
         {
             var resultado = new Dictionary<DateTime, List<BlocoTimeline>>();
             var dataAtual = dataInicio.Date;
