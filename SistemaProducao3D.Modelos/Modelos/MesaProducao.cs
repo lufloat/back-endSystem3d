@@ -178,8 +178,7 @@ namespace SistemaProducao3D.Modelos.Modelos
             // 2. Protótipo - ✅ ALTERADO: Apenas "Testes" com maiúscula e regex v\d+
             if (name.Contains("teste") ||        // pega Teste, Testes, TesteResistencia, TESTE
                  name.Contains("prototipo") ||
-                 name.Contains("protótipo") ||
-                 name.Contains("material"))       // pega TestesMateriaisXXX de janeiro
+                 name.Contains("protótipo"))      // pega TestesMateriaisXXX de janeiro
             {
                 IsPrototype = true;
                 JobType = "Prototipo";
